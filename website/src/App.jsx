@@ -151,6 +151,13 @@ function App() {
   const [hasReachedBottom, setHasReachedBottom] = useState(false);
   const inFlightMarkdownRequestsRef = useRef(new Map());
   const markdownArticleRef = useRef(null);
+  const shouldForceTopScrollRef = useRef(false);
+
+  const forceScrollToTop = useCallback(() => {
+    window.scrollTo({ top: 0, behavior: "auto" });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, []);
 
   const selectedEpisode = useMemo(
     () => episodes.find((ep) => ep.id === selectedEpisodeId) || null,
@@ -368,13 +375,22 @@ function App() {
 
   function goToNextEpisode() {
     if (!nextEpisode) return;
+    shouldForceTopScrollRef.current = true;
     setSelectedEpisodeId(nextEpisode.id);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    forceScrollToTop();
   }
 
   useEffect(() => {
     setHasReachedBottom(false);
-  }, [selectedEpisodeId]);
+
+    if (!shouldForceTopScrollRef.current) return;
+
+    // Repeat on next frame so it stays at top after render/layout updates.
+    requestAnimationFrame(() => {
+      forceScrollToTop();
+      shouldForceTopScrollRef.current = false;
+    });
+  }, [forceScrollToTop, selectedEpisodeId]);
 
   useEffect(() => {
     if (!selectedEpisode?.markdownHtml) return;

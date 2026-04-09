@@ -24,6 +24,10 @@ body,
   min-height: 100%;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   font-family: "Sora", "Manrope", "Avenir Next", sans-serif;
   background:
@@ -34,6 +38,7 @@ body {
 
 .page-shell {
   min-height: 100vh;
+  overflow-x: hidden;
 }
 
 .hero {
@@ -65,7 +70,7 @@ body {
   position: relative;
   max-width: 1120px;
   margin: 0 auto;
-  padding: 4.5rem 1.25rem 3rem;
+  padding: clamp(2.8rem, 6vw, 4.5rem) 1.25rem 3rem;
   animation: rise 500ms ease-out;
 }
 
@@ -224,6 +229,11 @@ body {
   margin-bottom: 0.3rem;
 }
 
+.episode-top input[type="checkbox"] {
+  inline-size: 1.05rem;
+  block-size: 1.05rem;
+}
+
 .episode-folder {
   font-size: 0.76rem;
   color: var(--muted);
@@ -231,6 +241,7 @@ body {
 }
 
 .episode-item strong {
+  display: block;
   font-size: 0.95rem;
   line-height: 1.2;
 }
@@ -263,6 +274,10 @@ body {
   font-family: "Space Grotesk", "Sora", sans-serif;
 }
 
+.content-head a {
+  word-break: break-word;
+}
+
 .state {
   color: var(--muted);
 }
@@ -274,6 +289,12 @@ body {
 .markdown {
   font-size: 1rem;
   line-height: 1.72;
+  overflow-wrap: anywhere;
+}
+
+.markdown img {
+  max-width: 100%;
+  height: auto;
 }
 
 .markdown h1,
@@ -324,6 +345,9 @@ body {
   border-collapse: collapse;
   width: 100%;
   margin: 1rem 0;
+  display: block;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .markdown table th,
@@ -377,6 +401,7 @@ body {
 @media (max-width: 960px) {
   .layout {
     grid-template-columns: 1fr;
+    margin-top: 1rem;
   }
 
   .episode-list {
@@ -393,5 +418,78 @@ body {
 
   .next-episode-btn {
     width: 100%;
+  }
+}
+
+@media (max-width: 720px) {
+  .hero-inner {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .lead {
+    margin-top: 0.85rem;
+  }
+
+  .progress-card {
+    max-width: 100%;
+  }
+
+  .progress-head {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .layout {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .list-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+  }
+
+  .episode-list,
+  .episode-content {
+    padding: 0.95rem;
+  }
+
+  .episode-content {
+    min-height: auto;
+  }
+
+  .content-head h2 {
+    font-size: clamp(1.15rem, 5vw, 1.35rem);
+  }
+}
+
+@media (max-width: 480px) {
+  .hero-inner,
+  .layout {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+
+  .hero h1 {
+    font-size: clamp(1.65rem, 8vw, 2rem);
+  }
+
+  .lead {
+    font-size: 0.95rem;
+  }
+
+  .episode-item {
+    padding: 0.65rem;
+  }
+
+  .markdown {
+    font-size: 0.95rem;
+    line-height: 1.65;
+  }
+
+  .next-episode-btn {
+    padding: 0.62rem 0.95rem;
   }
 }
