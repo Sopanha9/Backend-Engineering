@@ -1,0 +1,1 @@
+{"name":"ep11-queuing-scheduling","version":"1.0.0","scripts":{"start":"node src/index.js"},"dependencies":{"express":"^4.18.2"}}

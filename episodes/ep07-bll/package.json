@@ -1,0 +1,1 @@
+{"name":"ep07-bll","version":"1.0.0","scripts":{"start":"node src/index.js"},"dependencies":{"express":"^4.18.2"}}
