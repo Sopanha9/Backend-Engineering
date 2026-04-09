@@ -1,0 +1,397 @@
+:root {
+  color-scheme: light;
+  --bg: #fbf7ef;
+  --panel: #fffdf7;
+  --panel-2: #fff8ea;
+  --line: #e7ddc8;
+  --text: #2a2419;
+  --muted: #6f624c;
+  --brand: #c2410c;
+  --brand-2: #0f766e;
+  --focus: #1d4ed8;
+  --radius: 16px;
+  --shadow: 0 12px 36px rgba(64, 41, 10, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: "Sora", "Manrope", "Avenir Next", sans-serif;
+  background:
+    radial-gradient(circle at 15% -5%, #fde68a 0%, transparent 40%),
+    radial-gradient(circle at 90% 20%, #a7f3d0 0%, transparent 30%), var(--bg);
+  color: var(--text);
+}
+
+.page-shell {
+  min-height: 100vh;
+}
+
+.hero {
+  position: relative;
+  overflow: hidden;
+  border-bottom: 1px solid var(--line);
+}
+
+.hero-backdrop {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(
+      120deg,
+      rgba(255, 247, 237, 0.9) 0%,
+      rgba(236, 253, 245, 0.85) 100%
+    ),
+    repeating-linear-gradient(
+      -35deg,
+      rgba(194, 65, 12, 0.08),
+      rgba(194, 65, 12, 0.08) 12px,
+      transparent 12px,
+      transparent 24px
+    );
+  opacity: 0.6;
+}
+
+.hero-inner {
+  position: relative;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 4.5rem 1.25rem 3rem;
+  animation: rise 500ms ease-out;
+}
+
+.eyebrow {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--brand);
+  font-size: 0.8rem;
+}
+
+.hero h1 {
+  margin: 0.5rem 0 0;
+  max-width: 900px;
+  font-family: "Space Grotesk", "Sora", sans-serif;
+  font-size: clamp(2rem, 4vw, 3.2rem);
+  line-height: 1.08;
+}
+
+.lead {
+  max-width: 760px;
+  color: var(--muted);
+  font-size: 1.02rem;
+  margin-top: 1rem;
+}
+
+.progress-card {
+  margin-top: 1.5rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  border-radius: var(--radius);
+  padding: 1rem;
+  max-width: 640px;
+}
+
+.progress-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.progress-head h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.progress-head span {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.progress-bar {
+  margin-top: 0.8rem;
+  height: 12px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #efe5d2;
+}
+
+.progress-value {
+  height: 100%;
+  background: linear-gradient(90deg, var(--brand), var(--brand-2));
+  transition: width 260ms ease;
+}
+
+.progress-text {
+  margin: 0.6rem 0 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.layout {
+  max-width: 1120px;
+  margin: 1.4rem auto 0;
+  padding: 0 1.25rem 2rem;
+  display: grid;
+  gap: 1.2rem;
+  grid-template-columns: minmax(260px, 320px) 1fr;
+}
+
+.episode-list,
+.episode-content {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.episode-list {
+  padding: 1rem;
+  max-height: calc(100vh - 160px);
+  overflow: auto;
+}
+
+.list-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.list-head h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.list-head a,
+.content-head a {
+  color: var(--focus);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.list-head a:hover,
+.content-head a:hover {
+  text-decoration: underline;
+}
+
+.episode-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.episode-item {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-2);
+  padding: 0.75rem;
+  cursor: pointer;
+  transition:
+    transform 130ms ease,
+    border-color 130ms ease;
+}
+
+.episode-item:hover {
+  transform: translateY(-2px);
+  border-color: #d8b370;
+}
+
+.episode-item.active {
+  border-color: var(--brand);
+  background: #fff2dd;
+}
+
+.episode-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.3rem;
+}
+
+.episode-folder {
+  font-size: 0.76rem;
+  color: var(--muted);
+  font-family: "JetBrains Mono", "Consolas", monospace;
+}
+
+.episode-item strong {
+  font-size: 0.95rem;
+  line-height: 1.2;
+}
+
+.episode-content {
+  padding: 1.2rem;
+  min-height: 520px;
+}
+
+.content-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 0.9rem;
+  border-bottom: 1px dashed var(--line);
+  padding-bottom: 0.8rem;
+}
+
+.content-folder {
+  margin: 0;
+  color: var(--muted);
+  font-family: "JetBrains Mono", "Consolas", monospace;
+  font-size: 0.82rem;
+}
+
+.content-head h2 {
+  margin: 0.15rem 0 0;
+  font-size: 1.4rem;
+  font-family: "Space Grotesk", "Sora", sans-serif;
+}
+
+.state {
+  color: var(--muted);
+}
+
+.error {
+  color: #b91c1c;
+}
+
+.markdown {
+  font-size: 1rem;
+  line-height: 1.72;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3 {
+  font-family: "Space Grotesk", "Sora", sans-serif;
+  line-height: 1.2;
+  margin-top: 1.5em;
+  margin-bottom: 0.6em;
+}
+
+.markdown p,
+.markdown li {
+  color: #3c3326;
+}
+
+.markdown pre {
+  background: #2f2620;
+  color: #f7f2e7;
+  padding: 1rem;
+  border-radius: 12px;
+  overflow-x: auto;
+  border: 1px solid #553d2c;
+}
+
+.markdown code {
+  font-family: "JetBrains Mono", "Consolas", monospace;
+  background: #efe5d3;
+  border-radius: 6px;
+  padding: 0.12rem 0.3rem;
+  font-size: 0.9em;
+}
+
+.markdown pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.markdown blockquote {
+  margin: 1rem 0;
+  padding: 0.7rem 1rem;
+  border-left: 4px solid var(--brand);
+  background: #fff3df;
+  color: #5a4a34;
+}
+
+.markdown table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1rem 0;
+}
+
+.markdown table th,
+.markdown table td {
+  border: 1px solid var(--line);
+  padding: 0.55rem;
+  text-align: left;
+}
+
+.next-episode-wrap {
+  margin-top: 1.2rem;
+  padding-top: 1rem;
+  border-top: 1px dashed var(--line);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.next-episode-btn {
+  border: 1px solid #bfa98b;
+  border-radius: 10px;
+  padding: 0.68rem 1.1rem;
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: #2a2419;
+  cursor: pointer;
+  background: #f7efe1;
+  box-shadow: none;
+  transition: background-color 140ms ease;
+}
+
+.next-episode-btn:hover {
+  background: #efe2cf;
+}
+
+.next-episode-btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 960px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .episode-list {
+    max-height: none;
+  }
+
+  .content-head {
+    flex-direction: column;
+  }
+
+  .next-episode-wrap {
+    justify-content: stretch;
+  }
+
+  .next-episode-btn {
+    width: 100%;
+  }
+}
