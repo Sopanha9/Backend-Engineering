@@ -12,7 +12,8 @@ const OWNER = "Sopanha9";
 const REPO = "Backend-Engineering";
 const BRANCH = "main";
 const EPISODES_ROOT = "episodes";
-const STORAGE_KEY = "backend-series-completed-episodes";
+const PROGRESS_STORAGE_KEY = "be-hub-progress";
+const THEME_STORAGE_KEY = "be-hub-theme";
 const README_CACHE_PREFIX = "backend-series-readme-cache";
 const README_CACHE_SOFT_TTL_MS = 6 * 60 * 60 * 1000;
 const README_CACHE_HARD_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -54,7 +55,7 @@ function titleFromFolder(folder) {
 
 function getStoredCompletedEpisodes() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(PROGRESS_STORAGE_KEY);
     if (!raw) return new Set();
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return new Set();
@@ -62,6 +63,35 @@ function getStoredCompletedEpisodes() {
   } catch {
     return new Set();
   }
+}
+
+function getStoredTheme() {
+  try {
+    const raw = localStorage.getItem(THEME_STORAGE_KEY);
+    return raw === "dark" ? "dark" : "light";
+  } catch {
+    return "light";
+  }
+}
+
+function estimateReadTimeFromText(text) {
+  const words = text.trim().split(/\s+/).filter(Boolean).length;
+  return Math.max(1, Math.ceil(words / 200));
+}
+
+function estimateReadTimeFromHtml(html) {
+  const plain = html.replace(/<[^>]*>/g, " ");
+  return estimateReadTimeFromText(plain);
+}
+
+function slugifyHeading(text) {
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
 }
 
 function getReadmeCacheKey(episodeId) {
@@ -80,7 +110,7 @@ function getCachedReadmeEntry(episodeId) {
       if (!parsed || typeof parsed !== "object") {
         localStorage.removeItem(cacheKey);
       } else {
-        const { html, cachedAt, expiresAt } = parsed;
+        const { html, cachedAt, expiresAt, readTimeMins } = parsed;
         const isValidHtml = typeof html === "string" && html.length > 0;
         const hasCachedAt = typeof cachedAt === "number";
         const hardExpiresAt =
@@ -102,7 +132,12 @@ function getCachedReadmeEntry(episodeId) {
             // Ignore session storage failures.
           }
 
-          return { html, isStale };
+          const normalizedReadTime =
+            typeof readTimeMins === "number" && readTimeMins > 0
+              ? readTimeMins
+              : estimateReadTimeFromHtml(html);
+
+          return { html, readTimeMins: normalizedReadTime, isStale };
         }
       }
     }
@@ -112,15 +147,21 @@ function getCachedReadmeEntry(episodeId) {
 
   try {
     const sessionHtml = sessionStorage.getItem(cacheKey);
-    if (sessionHtml) return { html: sessionHtml, isStale: true };
+    if (sessionHtml) {
+      return {
+        html: sessionHtml,
+        readTimeMins: estimateReadTimeFromHtml(sessionHtml),
+        isStale: true,
+      };
+    }
   } catch {
     // Ignore storage access issues.
   }
 
-  return { html: "", isStale: false };
+  return { html: "", readTimeMins: 0, isStale: false };
 }
 
-function setCachedReadmeHtml(episodeId, html) {
+function setCachedReadmeHtml(episodeId, html, readTimeMins) {
   const cacheKey = getReadmeCacheKey(episodeId);
 
   try {
@@ -132,6 +173,7 @@ function setCachedReadmeHtml(episodeId, html) {
   try {
     const payload = {
       html,
+      readTimeMins,
       cachedAt: Date.now(),
       expiresAt: Date.now() + README_CACHE_HARD_TTL_MS,
     };
@@ -144,11 +186,17 @@ function setCachedReadmeHtml(episodeId, html) {
 function App() {
   const [episodes, setEpisodes] = useState([]);
   const [selectedEpisodeId, setSelectedEpisodeId] = useState("");
-  const [completedSet, setCompletedSet] = useState(new Set());
+  const [completedSet, setCompletedSet] = useState(() =>
+    getStoredCompletedEpisodes(),
+  );
+  const [theme, setTheme] = useState(() => getStoredTheme());
+  const [searchQuery, setSearchQuery] = useState("");
+  const [tableOfContents, setTableOfContents] = useState([]);
+  const [isCompletionBannerDismissed, setIsCompletionBannerDismissed] =
+    useState(false);
   const [isLoadingList, setIsLoadingList] = useState(true);
   const [isLoadingMarkdown, setIsLoadingMarkdown] = useState(false);
   const [error, setError] = useState("");
-  const [hasReachedBottom, setHasReachedBottom] = useState(false);
   const inFlightMarkdownRequestsRef = useRef(new Map());
   const markdownArticleRef = useRef(null);
   const shouldForceTopScrollRef = useRef(false);
@@ -164,68 +212,84 @@ function App() {
     [episodes, selectedEpisodeId],
   );
 
-  const updateEpisodeMarkdown = useCallback((episodeId, markdownHtml) => {
-    setEpisodes((prev) =>
-      prev.map((ep) =>
-        ep.id === episodeId && !ep.markdownHtml ? { ...ep, markdownHtml } : ep,
-      ),
-    );
-  }, []);
-
-  const fetchEpisodeMarkdownHtml = useCallback(
-    async (episode, options = {}) => {
-      if (!episode) return { html: "", fromCache: false, isStale: false };
-
-      const { forceRefresh = false } = options;
-
-      if (!forceRefresh && episode.markdownHtml) {
-        return { html: episode.markdownHtml, fromCache: true, isStale: false };
-      }
-
-      if (!forceRefresh) {
-        const cached = getCachedReadmeEntry(episode.id);
-        if (cached.html) {
-          return {
-            html: cached.html,
-            fromCache: true,
-            isStale: cached.isStale,
-          };
-        }
-      }
-
-      const existingRequest = inFlightMarkdownRequestsRef.current.get(
-        episode.id,
+  const updateEpisodeContent = useCallback(
+    (episodeId, markdownHtml, readTimeMins) => {
+      setEpisodes((prev) =>
+        prev.map((ep) =>
+          ep.id === episodeId
+            ? {
+                ...ep,
+                markdownHtml: markdownHtml || ep.markdownHtml,
+                readTimeMins: readTimeMins || ep.readTimeMins,
+              }
+            : ep,
+        ),
       );
-      if (existingRequest) {
-        return existingRequest;
-      }
-
-      const request = fetch(episode.markdownUrl)
-        .then((response) => {
-          if (!response.ok) {
-            throw new Error(`Failed to fetch README for ${episode.folder}`);
-          }
-          return response.text();
-        })
-        .then((markdown) => {
-          const rendered = marked.parse(markdown);
-          const cleanHtml = DOMPurify.sanitize(rendered);
-          setCachedReadmeHtml(episode.id, cleanHtml);
-          return { html: cleanHtml, fromCache: false, isStale: false };
-        })
-        .finally(() => {
-          inFlightMarkdownRequestsRef.current.delete(episode.id);
-        });
-
-      inFlightMarkdownRequestsRef.current.set(episode.id, request);
-      return request;
     },
     [],
   );
 
-  useEffect(() => {
-    setCompletedSet(getStoredCompletedEpisodes());
+  const fetchEpisodeContent = useCallback(async (episode, options = {}) => {
+    if (!episode) {
+      return { html: "", readTimeMins: 0, fromCache: false, isStale: false };
+    }
 
+    const { forceRefresh = false } = options;
+
+    if (!forceRefresh && episode.markdownHtml && episode.readTimeMins) {
+      return {
+        html: episode.markdownHtml,
+        readTimeMins: episode.readTimeMins,
+        fromCache: true,
+        isStale: false,
+      };
+    }
+
+    if (!forceRefresh) {
+      const cached = getCachedReadmeEntry(episode.id);
+      if (cached.html) {
+        return {
+          html: cached.html,
+          readTimeMins: cached.readTimeMins,
+          fromCache: true,
+          isStale: cached.isStale,
+        };
+      }
+    }
+
+    const existingRequest = inFlightMarkdownRequestsRef.current.get(episode.id);
+    if (existingRequest) {
+      return existingRequest;
+    }
+
+    const request = fetch(episode.markdownUrl)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`Failed to fetch README for ${episode.folder}`);
+        }
+        return response.text();
+      })
+      .then((markdown) => {
+        const readTimeMins = estimateReadTimeFromText(markdown);
+        const rendered = marked.parse(markdown);
+        const cleanHtml = DOMPurify.sanitize(rendered);
+        setCachedReadmeHtml(episode.id, cleanHtml, readTimeMins);
+        return {
+          html: cleanHtml,
+          readTimeMins,
+          fromCache: false,
+          isStale: false,
+        };
+      })
+      .finally(() => {
+        inFlightMarkdownRequestsRef.current.delete(episode.id);
+      });
+
+    inFlightMarkdownRequestsRef.current.set(episode.id, request);
+    return request;
+  }, []);
+
+  useEffect(() => {
     async function loadEpisodes() {
       setIsLoadingList(true);
       setError("");
@@ -249,6 +313,7 @@ function App() {
             githubUrl: `https://github.com/${OWNER}/${REPO}/tree/${BRANCH}/${EPISODES_ROOT}/${item.name}`,
             markdownUrl: `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/${EPISODES_ROOT}/${item.name}/README.md`,
             markdownHtml: "",
+            readTimeMins: 0,
           }));
 
         setEpisodes(dirs);
@@ -271,23 +336,27 @@ function App() {
 
     async function loadMarkdown() {
       const selected = episodes.find((ep) => ep.id === selectedEpisodeId);
-      if (!selected || selected.markdownHtml) return;
+      if (!selected || (selected.markdownHtml && selected.readTimeMins)) return;
 
       setIsLoadingMarkdown(true);
       setError("");
 
       try {
-        const result = await fetchEpisodeMarkdownHtml(selected);
-        updateEpisodeMarkdown(selected.id, result.html);
+        const result = await fetchEpisodeContent(selected);
+        updateEpisodeContent(selected.id, result.html, result.readTimeMins);
 
         // Stale-while-revalidate: show cached content now, refresh silently.
         if (result.fromCache && result.isStale) {
-          fetchEpisodeMarkdownHtml(selected, { forceRefresh: true })
+          fetchEpisodeContent(selected, { forceRefresh: true })
             .then((freshResult) => {
               setEpisodes((prev) =>
                 prev.map((ep) =>
                   ep.id === selected.id
-                    ? { ...ep, markdownHtml: freshResult.html }
+                    ? {
+                        ...ep,
+                        markdownHtml: freshResult.html,
+                        readTimeMins: freshResult.readTimeMins,
+                      }
                     : ep,
                 ),
               );
@@ -304,29 +373,27 @@ function App() {
     }
 
     loadMarkdown();
-  }, [
-    episodes,
-    fetchEpisodeMarkdownHtml,
-    selectedEpisodeId,
-    updateEpisodeMarkdown,
-  ]);
+  }, [episodes, fetchEpisodeContent, selectedEpisodeId, updateEpisodeContent]);
 
   useEffect(() => {
     if (episodes.length === 0) return;
 
     let cancelled = false;
     const queue = episodes
-      .filter((ep) => ep.id !== selectedEpisodeId && !ep.markdownHtml)
-      .slice(0, 4);
+      .filter(
+        (ep) =>
+          ep.id !== selectedEpisodeId && (!ep.markdownHtml || !ep.readTimeMins),
+      )
+      .slice(0, 18);
 
     async function prefetchLikelyNextReads() {
       for (const episode of queue) {
         if (cancelled) break;
 
         try {
-          const result = await fetchEpisodeMarkdownHtml(episode);
+          const result = await fetchEpisodeContent(episode);
           if (!cancelled) {
-            updateEpisodeMarkdown(episode.id, result.html);
+            updateEpisodeContent(episode.id, result.html, result.readTimeMins);
           }
         } catch {
           // Keep UI responsive even if background prefetch fails.
@@ -341,10 +408,30 @@ function App() {
     };
   }, [
     episodes.length,
-    fetchEpisodeMarkdownHtml,
+    fetchEpisodeContent,
     selectedEpisodeId,
-    updateEpisodeMarkdown,
+    updateEpisodeContent,
   ]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        PROGRESS_STORAGE_KEY,
+        JSON.stringify(Array.from(completedSet)),
+      );
+    } catch {
+      // Ignore local storage quota/private mode failures.
+    }
+  }, [completedSet]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", theme === "dark");
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch {
+      // Ignore local storage write errors.
+    }
+  }, [theme]);
 
   const total = episodes.length;
   const completed = useMemo(
@@ -355,16 +442,25 @@ function App() {
     () => episodes.findIndex((ep) => ep.id === selectedEpisodeId),
     [episodes, selectedEpisodeId],
   );
+  const prevEpisode =
+    selectedEpisodeIndex > 0 ? episodes[selectedEpisodeIndex - 1] : null;
   const nextEpisode =
     selectedEpisodeIndex >= 0 ? episodes[selectedEpisodeIndex + 1] : null;
   const percent = total === 0 ? 0 : Math.round((completed / total) * 100);
+  const filteredEpisodes = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return episodes;
+    return episodes.filter((episode) =>
+      episode.title.toLowerCase().includes(query),
+    );
+  }, [episodes, searchQuery]);
+  const isCourseComplete = total > 0 && completed === total;
 
   function toggleComplete(id) {
     setCompletedSet((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(next)));
       return next;
     });
   }
@@ -380,9 +476,34 @@ function App() {
     forceScrollToTop();
   }
 
-  useEffect(() => {
-    setHasReachedBottom(false);
+  function goToPreviousEpisode() {
+    if (!prevEpisode) return;
+    shouldForceTopScrollRef.current = true;
+    setSelectedEpisodeId(prevEpisode.id);
+    forceScrollToTop();
+  }
 
+  function toggleTheme() {
+    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
+  }
+
+  function resetProgress() {
+    setCompletedSet(new Set());
+    setIsCompletionBannerDismissed(false);
+    try {
+      localStorage.removeItem(PROGRESS_STORAGE_KEY);
+    } catch {
+      // Ignore storage access issues.
+    }
+  }
+
+  useEffect(() => {
+    if (!isCourseComplete) {
+      setIsCompletionBannerDismissed(false);
+    }
+  }, [isCourseComplete]);
+
+  useEffect(() => {
     if (!shouldForceTopScrollRef.current) return;
 
     // Repeat on next frame so it stays at top after render/layout updates.
@@ -393,26 +514,77 @@ function App() {
   }, [forceScrollToTop, selectedEpisodeId]);
 
   useEffect(() => {
-    if (!selectedEpisode?.markdownHtml) return;
-
-    function checkReachedBottom() {
-      const article = markdownArticleRef.current;
-      if (!article) {
-        setHasReachedBottom(false);
-        return;
-      }
-
-      const bottom = article.getBoundingClientRect().bottom;
-      setHasReachedBottom(bottom <= window.innerHeight + 28);
+    const article = markdownArticleRef.current;
+    if (!selectedEpisode?.markdownHtml || !article) {
+      setTableOfContents([]);
+      return;
     }
 
-    checkReachedBottom();
-    window.addEventListener("scroll", checkReachedBottom, { passive: true });
-    window.addEventListener("resize", checkReachedBottom);
+    const counts = new Map();
+    const toc = [];
+    const h2Elements = Array.from(article.querySelectorAll("h2"));
+
+    h2Elements.forEach((heading) => {
+      const text = heading.textContent?.trim() || "section";
+      const baseSlug = slugifyHeading(text) || "section";
+      const index = (counts.get(baseSlug) || 0) + 1;
+      counts.set(baseSlug, index);
+      const id = index === 1 ? baseSlug : `${baseSlug}-${index}`;
+      heading.id = id;
+      toc.push({ id, label: text });
+    });
+
+    const preBlocks = Array.from(article.querySelectorAll("pre"));
+    preBlocks.forEach((pre, index) => {
+      const wrapper = document.createElement("div");
+      wrapper.className = "code-block";
+      pre.parentNode?.insertBefore(wrapper, pre);
+      wrapper.appendChild(pre);
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "copy-code-btn";
+      button.dataset.codeIndex = String(index);
+      button.textContent = "Copy";
+      wrapper.appendChild(button);
+    });
+
+    const timers = [];
+    function onArticleClick(event) {
+      const button = event.target.closest(".copy-code-btn");
+      if (!button) return;
+
+      const wrapper = button.closest(".code-block");
+      const code =
+        wrapper?.querySelector("pre code") || wrapper?.querySelector("pre");
+      const codeText = code?.textContent || "";
+
+      navigator.clipboard
+        .writeText(codeText)
+        .then(() => {
+          button.textContent = "Copied!";
+          button.disabled = true;
+          const timer = window.setTimeout(() => {
+            button.textContent = "Copy";
+            button.disabled = false;
+          }, 2000);
+          timers.push(timer);
+        })
+        .catch(() => {
+          button.textContent = "Failed";
+          const timer = window.setTimeout(() => {
+            button.textContent = "Copy";
+          }, 2000);
+          timers.push(timer);
+        });
+    }
+
+    article.addEventListener("click", onArticleClick);
+    setTableOfContents(toc);
 
     return () => {
-      window.removeEventListener("scroll", checkReachedBottom);
-      window.removeEventListener("resize", checkReachedBottom);
+      article.removeEventListener("click", onArticleClick);
+      timers.forEach((timerId) => window.clearTimeout(timerId));
     };
   }, [selectedEpisode?.id, selectedEpisode?.markdownHtml]);
 
@@ -421,6 +593,16 @@ function App() {
       <header className="hero">
         <div className="hero-backdrop" aria-hidden="true" />
         <div className="hero-inner">
+          <div className="hero-actions">
+            <button
+              type="button"
+              className="theme-toggle"
+              onClick={toggleTheme}
+              aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            >
+              {theme === "dark" ? "Light" : "Dark"}
+            </button>
+          </div>
           <p className="eyebrow">Backend Engineering Study Journey</p>
           <h1>
             Learn backend by building, reading, and completing each episode
@@ -454,6 +636,31 @@ function App() {
               left
             </p>
           </div>
+
+          {isCourseComplete && !isCompletionBannerDismissed && (
+            <div className="completion-banner" role="status" aria-live="polite">
+              <button
+                type="button"
+                className="completion-close"
+                onClick={() => setIsCompletionBannerDismissed(true)}
+                aria-label="Dismiss completion message"
+              >
+                x
+              </button>
+              <h2>🎉 You completed the Backend Engineering course!</h2>
+              <p>
+                Great consistency. Keep the momentum and revisit episodes as a
+                quick refresher whenever you build new projects.
+              </p>
+              <button
+                type="button"
+                className="completion-reset"
+                onClick={resetProgress}
+              >
+                Reset Progress
+              </button>
+            </div>
+          )}
         </div>
       </header>
 
@@ -470,14 +677,32 @@ function App() {
             </a>
           </div>
 
+          <label className="search-label" htmlFor="episode-search">
+            Find an episode
+          </label>
+          <input
+            id="episode-search"
+            className="episode-search"
+            type="search"
+            placeholder="Search by title..."
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+          />
+
           {isLoadingList && <p className="state">Loading episode list...</p>}
           {!isLoadingList && error && <p className="state error">{error}</p>}
           {!isLoadingList && !error && episodes.length === 0 && (
             <p className="state">No episodes found.</p>
           )}
+          {!isLoadingList &&
+            !error &&
+            episodes.length > 0 &&
+            filteredEpisodes.length === 0 && (
+              <p className="state">No episodes found.</p>
+            )}
 
           <ul>
-            {episodes.map((episode) => {
+            {filteredEpisodes.map((episode) => {
               const isActive = selectedEpisodeId === episode.id;
               const isCompleted = completedSet.has(episode.id);
 
@@ -489,7 +714,9 @@ function App() {
                     type="button"
                   >
                     <div className="episode-top">
-                      <span className="episode-folder">{episode.folder}</span>
+                      <span className="episode-status">
+                        {isCompleted ? "Completed" : "In progress"}
+                      </span>
                       <input
                         type="checkbox"
                         checked={isCompleted}
@@ -502,6 +729,11 @@ function App() {
                       />
                     </div>
                     <strong>{episode.title}</strong>
+                    {episode.readTimeMins > 0 && (
+                      <span className="episode-readtime">
+                        ~{episode.readTimeMins} min
+                      </span>
+                    )}
                   </button>
                 </li>
               );
@@ -519,6 +751,11 @@ function App() {
                 <div>
                   <p className="content-folder">{selectedEpisode.folder}</p>
                   <h2>{selectedEpisode.title}</h2>
+                  {selectedEpisode.readTimeMins > 0 && (
+                    <p className="content-readtime">
+                      Estimated read time: ~{selectedEpisode.readTimeMins} min
+                    </p>
+                  )}
                 </div>
                 <a
                   href={selectedEpisode.githubUrl}
@@ -531,6 +768,19 @@ function App() {
 
               {isLoadingMarkdown && <p className="state">Loading README...</p>}
 
+              {!isLoadingMarkdown && tableOfContents.length > 0 && (
+                <nav className="contents-panel" aria-label="Table of contents">
+                  <h3>Contents</h3>
+                  <ul>
+                    {tableOfContents.map((item) => (
+                      <li key={item.id}>
+                        <a href={`#${item.id}`}>{item.label}</a>
+                      </li>
+                    ))}
+                  </ul>
+                </nav>
+              )}
+
               {!isLoadingMarkdown && selectedEpisode.markdownHtml && (
                 <article
                   ref={markdownArticleRef}
@@ -541,20 +791,26 @@ function App() {
                 />
               )}
 
-              {!isLoadingMarkdown &&
-                selectedEpisode?.markdownHtml &&
-                nextEpisode &&
-                hasReachedBottom && (
-                  <div className="next-episode-wrap">
-                    <button
-                      type="button"
-                      className="next-episode-btn"
-                      onClick={goToNextEpisode}
-                    >
-                      Next Episode: {nextEpisode.title}
-                    </button>
-                  </div>
-                )}
+              {!isLoadingMarkdown && selectedEpisode?.markdownHtml && (
+                <div className="episode-nav-wrap">
+                  <button
+                    type="button"
+                    className="episode-nav-btn"
+                    onClick={goToPreviousEpisode}
+                    disabled={!prevEpisode}
+                  >
+                    ← Previous
+                  </button>
+                  <button
+                    type="button"
+                    className="episode-nav-btn"
+                    onClick={goToNextEpisode}
+                    disabled={!nextEpisode}
+                  >
+                    Next →
+                  </button>
+                </div>
+              )}
             </>
           )}
         </section>
